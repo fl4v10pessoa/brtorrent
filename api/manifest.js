@@ -1,28 +1,39 @@
 const manifestHandler = async (req, res) => {
-  const baseUrl = process.env.VERCEL_URL 
-    ? `https://${process.env.VERCEL_URL}`
-    : process.env.BASE_URL || 'http://localhost:3000';
-
-  res.setHeader('Content-Type', 'application/json');
+  // Headers CORS essenciais para Stremio
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+  res.setHeader('Content-Type', 'application/json; charset=utf-8');
 
-  res.status(200).json({
-    id: 'com.torrentsbr.addon',
-    name: 'Torrents BR',
+  // Handle preflight
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
+
+  const manifest = {
+    id: 'org.fl4v10.brtorrent',
     version: '2.1.0',
+    name: 'Torrents BR',
     description: 'Addon estilo Torrentio para sites brasileiros de torrents. Busca automática em múltiplos sites com cache otimizado.',
-    logo: 'https://i.imgur.com/Yq5p4xX.png',
-    background: 'https://i.imgur.com/8fZfZfZ.png',
-    resources: ['stream'],
+    logo: 'https://img.icons8.com/color/96/torrent.png',
+    background: 'https://img.icons8.com/color/416/torrent.png',
+    resources: [
+      {
+        name: 'stream',
+        types: ['movie', 'series'],
+        idPrefixes: ['tt', 'kitsu']
+      }
+    ],
     types: ['movie', 'series'],
-    idPrefixes: ['tt'],
+    idPrefixes: ['tt', 'kitsu'],
+    catalogs: [],
     behaviorHints: {
       configurable: false,
       configurationRequired: false
     }
-  });
+  };
+
+  return res.status(200).json(manifest);
 };
 
 module.exports = manifestHandler;
