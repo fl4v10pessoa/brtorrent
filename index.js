@@ -1,85 +1,29 @@
 const express = require('express');
 const cors = require('cors');
-const puppeteer = require('puppeteer-extra');
-const StealthPlugin = require('puppeteer-extra-plugin-stealth');
-const redis = require('redis');
 const axios = require('axios');
+const redis = require('redis');
 require('dotenv').config();
-
-puppeteer.use(StealthPlugin());
 
 const app = express();
 const PORT = process.env.PORT || 3000;
 
 // ===================== LOGGING =====================
 const log = {
-  info: (msg, ...args) => console.log(`ℹ️  [${new Date().toISOString()}] INFO: ${msg}`, ...args),
-  warn: (msg, ...args) => console.warn(`⚠️  [${new Date().toISOString()}] WARN: ${msg}`, ...args),
-  error: (msg, ...args) => console.error(`❌ [${new Date().toISOString()}] ERROR: ${msg}`, ...args),
-  success: (msg, ...args) => console.log(`✅ [${new Date().toISOString()}] SUCCESS: ${msg}`, ...args),
-  debug: (msg, ...args) => process.env.DEBUG && console.log(`🔍 [${new Date().toISOString()}] DEBUG: ${msg}`, ...args)
+  info: (msg, ...args) => console.log(`ℹ️  [${new Date().toISOString()}] ${msg}`, ...args),
+  warn: (msg, ...args) => console.warn(`⚠️  [${new Date().toISOString()}] ${msg}`, ...args),
+  error: (msg, ...args) => console.error(`❌ [${new Date().toISOString()}] ${msg}`, ...args),
+  success: (msg, ...args) => console.log(`✅ [${new Date().toISOString()}] ${msg}`, ...args)
 };
 
-// ===================== CONFIG =====================
-let browser;
-let browserLaunchRetries = 0;
-const MAX_BROWSER_RETRIES = 3;
-
-async function getBrowser() {
-  if (!browser || !browser.isConnected()) {
-    while (browserLaunchRetries < MAX_BROWSER_RETRIES) {
-      try {
-        log.info(`Iniciando Puppeteer (tentativa ${browserLaunchRetries + 1}/${MAX_BROWSER_RETRIES})...`);
-        browser = await puppeteer.launch({
-          headless: 'new',
-          args: [
-            '--no-sandbox',
-            '--disable-setuid-sandbox',
-            '--disable-dev-shm-usage',
-            '--disable-gpu',
-            '--no-first-run',
-            '--no-zygote',
-            '--single-process',
-            '--disable-extensions'
-          ]
-        });
-        browserLaunchRetries = 0;
-        log.success('Puppeteer iniciado com sucesso');
-        break;
-      } catch (err) {
-        browserLaunchRetries++;
-        log.error(`Falha ao iniciar Puppeteer (${browserLaunchRetries}/${MAX_BROWSER_RETRIES}):`, err.message);
-        if (browserLaunchRetries >= MAX_BROWSER_RETRIES) {
-          throw new Error(`Não foi possível iniciar o Puppeteer após ${MAX_BROWSER_RETRIES} tentativas`);
-        }
-        await new Promise(resolve => setTimeout(resolve, 2000 * browserLaunchRetries));
-      }
-    }
-  }
-  return browser;
-}
-
-// Redis com fallback
+// ===================== REDIS =====================
 let redisClient;
 let redisAvailable = false;
 
 async function initRedis() {
   try {
-    redisClient = redis.createClient({
-      url: process.env.REDIS_URL || 'redis://localhost:6379',
-      socket: {
-        connectTimeout: 5000,
-        reconnectStrategy: (retries) => {
-          if (retries > 5) {
-            log.warn('Redis não disponível, operando sem cache');
-            redisAvailable = false;
-            return new Error('Redis não disponível');
-          }
-          return Math.min(retries * 100, 3000);
-        }
-      }
-    });
-
+    const redisUrl = process.env.REDIS_URL || 'redis://localhost:6379';
+    redisClient = redis.createClient({ url: redisUrl });
+    
     redisClient.on('error', (err) => {
       log.warn('Erro Redis:', err.message);
       redisAvailable = false;
@@ -97,221 +41,58 @@ async function initRedis() {
   }
 }
 
-const CACHE_TTL = 3600; // 1 hora em segundos
+const CACHE_TTL = 3600; // 1 hora
 
-// Rate limiting simples para não sobrecarregar os sites
-const requestTimestamps = {};
-const RATE_LIMIT_WINDOW = 1000; // 1 segundo entre requests por site
-const MAX_CONCURRENT_SCRAPES = 2;
+// ===================== JACKETT =====================
+async function fetchJackett(query) {
+  const jackettUrl = process.env.JACKETT_URL;
+  const jackettApiKey = process.env.JACKETT_API_KEY;
 
-async function rateLimitCheck(siteName) {
-  const now = Date.now();
-  const lastRequest = requestTimestamps[siteName] || 0;
-  const timeToWait = Math.max(0, RATE_LIMIT_WINDOW - (now - lastRequest));
-  if (timeToWait > 0) {
-    log.debug(`Rate limit: aguardando ${timeToWait}ms para ${siteName}`);
-    await new Promise(resolve => setTimeout(resolve, timeToWait));
-  }
-  requestTimestamps[siteName] = Date.now();
-}
-
-// ===================== SCRAPER MELHORADO =====================
-const SITE_CONFIGS = {
-  'comando.la': {
-    url: (q) => `https://comando.la/?s=${encodeURIComponent(q)}`,
-    selectors: {
-      items: 'article, .post, .entry, .result-item',
-      title: 'h2 a, .title a, h2, .entry-title',
-      magnet: 'a[href^="magnet:"], a[href*="magnet:"]',
-      size: '.size, .tamanho, .filesize, .meta-size',
-      seeds: '.seeds, .seeders, .seed, .meta-seed'
-    }
-  },
-  'bludv1.com': {
-    url: (q) => `https://bludv1.com/?s=${encodeURIComponent(q)}`,
-    selectors: {
-      items: 'article, .post, .item, .blog-item',
-      title: 'h2 a, .title a, h3 a, .entry-title',
-      magnet: 'a[href^="magnet:"], a[href*="magnet:"]',
-      size: '.size, .tamanho, .filesize',
-      seeds: '.seeds, .seeders, .seed'
-    }
-  },
-  'hdrtorrent.com': {
-    url: (q) => `https://hdrtorrent.com/?s=${encodeURIComponent(q)}`,
-    selectors: {
-      items: 'tr, .torrent-row, .torrent, table tr',
-      title: 'td a, .torrent-name a, a[href*="torrent"]',
-      magnet: 'a[href^="magnet:"], a[href*="magnet:"]',
-      size: 'td.size, .tamanho, .size',
-      seeds: 'td.seeds, .seeders, .seed'
-    }
-  },
-  'redetorrent.com': {
-    url: (q) => `https://redetorrent.com/?s=${encodeURIComponent(q)}`,
-    selectors: {
-      items: 'article, .post, .item, .movie-item',
-      title: 'h2 a, .title a, h3, .entry-title',
-      magnet: 'a[href^="magnet:"], a[href*="magnet:"]',
-      size: '.size, .tamanho, .filesize',
-      seeds: '.seeds, .seeders, .seed'
-    }
-  },
-  'torrentsdosfilmes1.com': {
-    url: (q) => `https://torrentsdosfilmes1.com/?s=${encodeURIComponent(q)}`,
-    selectors: {
-      items: 'article, .post, .item, .torrent-item',
-      title: 'h2 a, .title a, h3 a, .entry-title',
-      magnet: 'a[href^="magnet:"], a[href*="magnet:"]',
-      size: '.size, .tamanho, .filesize',
-      seeds: '.seeds, .seeders, .seed'
-    }
-  }
-};
-
-async function scrapeSite(siteName, searchUrl, selectors, retries = 2) {
-  await rateLimitCheck(siteName);
-
-  let browserInstance;
-  let page;
-
-  try {
-    browserInstance = await getBrowser();
-    page = await browserInstance.newPage();
-    await page.setUserAgent(
-      'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36'
-    );
-    await page.setViewport({ width: 1280, height: 800 });
-
-    // Bloquear recursos desnecessários para performance
-    await page.setRequestInterception(true);
-    page.on('request', (req) => {
-      const resourceType = req.resourceType();
-      if (['image', 'stylesheet', 'font', 'media'].includes(resourceType)) {
-        req.abort();
-      } else {
-        req.continue();
-      }
-    });
-
-    log.info(`Scraping ${siteName}...`);
-    await page.goto(searchUrl, { waitUntil: 'domcontentloaded', timeout: 20000 });
-
-    // Aguardar conteúdo carregar
-    await new Promise(resolve => setTimeout(resolve, 2000));
-
-    const results = await page.evaluate((sel) => {
-      const items = [];
-      const itemElements = document.querySelectorAll(sel.items);
-
-      itemElements.forEach(el => {
-        const titleEl = el.querySelector(sel.title);
-        let title = titleEl ? (titleEl.textContent || '').trim() : '';
-        let detailLink = titleEl ? (titleEl.href || '') : '';
-
-        // Limpar título
-        title = title.replace(/\s+/g, ' ').trim();
-
-        let magnet = '';
-        const magnetEl = el.querySelector(sel.magnet);
-        if (magnetEl) {
-          magnet = magnetEl.href || '';
-        }
-
-        // Se não encontrou magnet no item, pode estar no link de detalhes
-        if (!magnet && detailLink) {
-          // Tenta extrair do onclick ou data attributes
-          const onclickAttr = el.getAttribute('onclick') || '';
-          const dataMagnet = el.getAttribute('data-magnet') || '';
-          magnet = dataMagnet || (onclickAttr.includes('magnet') ? onclickAttr.match(/magnet:[^"]*/)?.[0] || '' : '');
-        }
-
-        const sizeEl = el.querySelector(sel.size);
-        const size = sizeEl ? (sizeEl.textContent || '').trim() : 'N/A';
-
-        const seedsEl = el.querySelector(sel.seeds);
-        const seedsText = seedsEl ? (seedsEl.textContent || '').trim() : '0';
-        const seeds = parseInt(seedsText.replace(/\D/g, '')) || 0;
-
-        if (title && title.length > 5) {
-          items.push({ title, detailLink, magnet, size, seeds });
-        }
-      });
-
-      return items.slice(0, 20);
-    }, selectors);
-
-    // Buscar magnets nos detalhes se necessário
-    const finalResults = [];
-    for (const item of results) {
-      if (item.magnet && item.magnet.startsWith('magnet:')) {
-        finalResults.push(item);
-        continue;
-      }
-
-      // Tentar pegar magnet da página de detalhes
-      if (item.detailLink && item.detailLink.startsWith('http')) {
-        try {
-          const detailPage = await browserInstance.newPage();
-          await detailPage.setRequestInterception(true);
-          detailPage.on('request', (req) => {
-            if (['image', 'stylesheet', 'font', 'media'].includes(req.resourceType())) {
-              req.abort();
-            } else {
-              req.continue();
-            }
-          });
-
-          await detailPage.goto(item.detailLink, { waitUntil: 'domcontentloaded', timeout: 15000 });
-          await new Promise(resolve => setTimeout(resolve, 1500));
-
-          const magnet = await detailPage.evaluate(() => {
-            const magnetEl = document.querySelector('a[href^="magnet:"], a[href*="magnet:"]');
-            return magnetEl ? magnetEl.href : '';
-          });
-
-          await detailPage.close().catch(() => {});
-
-          if (magnet && magnet.startsWith('magnet:')) {
-            finalResults.push({ ...item, magnet });
-          } else {
-            finalResults.push(item); // Mantém mesmo sem magnet
-          }
-        } catch (err) {
-          log.debug(`Erro ao buscar magnet em ${item.detailLink}: ${err.message}`);
-          finalResults.push(item);
-        }
-      } else {
-        finalResults.push(item);
-      }
-    }
-
-    await page.close().catch(() => {});
-
-    log.success(`${siteName}: ${finalResults.length} resultados encontrados`);
-
-    return finalResults
-      .filter(r => r.magnet && r.magnet.startsWith('magnet:'))
-      .map(r => ({
-        provedor: siteName,
-        nome: r.nome || r.title,
-        tamanho: r.size || 'N/A',
-        seeds: r.seeds || 0,
-        magnet: r.magnet
-      }));
-  } catch (e) {
-    log.error(`${siteName} falhou:`, e.message);
-
-    // Retry com delay
-    if (retries > 0) {
-      log.info(`Tentando novamente ${siteName} (${retries} retries restantes)...`);
-      await new Promise(resolve => setTimeout(resolve, 2000));
-      return scrapeSite(siteName, searchUrl, selectors, retries - 1);
-    }
-
-    await page?.close().catch(() => {});
+  if (!jackettUrl || !jackettApiKey) {
+    log.warn('Jackett não configurado. Defina JACKETT_URL e JACKETT_API_KEY no .env');
     return [];
   }
+
+  try {
+    log.info(`Buscando no Jackett: ${query}`);
+
+    const { data } = await axios.get(`${jackettUrl}/api/v2.0/indexers/all/results`, {
+      params: {
+        apikey: jackettApiKey,
+        Query: query,
+        Category: 2000,
+        limit: 50
+      },
+      timeout: 15000,
+      headers: { 'User-Agent': 'TorrentsBR/1.0' }
+    });
+
+    if (!data?.Results?.length) {
+      log.info('Jackett retornou 0 resultados');
+      return [];
+    }
+
+    log.success(`Jackett: ${data.Results.length} resultados`);
+
+    return data.Results.slice(0, 50).map(item => ({
+      provedor: item.Tracker || 'Jackett',
+      nome: item.Title || 'Torrent',
+      magnet: item.MagnetUri || '',
+      tamanho: formatBytes(item.Size),
+      seeds: item.Seeders || 0
+    })).filter(r => r.magnet && r.magnet.startsWith('magnet:'));
+  } catch (err) {
+    log.error(`Jackett falhou: ${err.message}`);
+    return [];
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
 }
 
 // ===================== BUSCA COM CACHE =====================
@@ -334,44 +115,23 @@ async function getTorrents(query) {
 
   log.info(`Buscando torrents para: ${query}`);
 
-  // Scraping com controle de concorrência
-  const siteNames = Object.keys(SITE_CONFIGS);
-  const results = [];
+  // Buscar apenas do Jackett
+  const torrents = await fetchJackett(query);
 
-  // Processar em lotes para não sobrecarregar
-  for (let i = 0; i < siteNames.length; i += MAX_CONCURRENT_SCRAPES) {
-    const batch = siteNames.slice(i, i + MAX_CONCURRENT_SCRAPES);
-    const promises = batch.map(async (siteName) => {
-      const config = SITE_CONFIGS[siteName];
-      try {
-        return await scrapeSite(siteName, config.url(query), config.selectors);
-      } catch (err) {
-        log.error(`Erro em ${siteName}:`, err.message);
-        return [];
-      }
-    });
-
-    const batchResults = await Promise.allSettled(promises);
-    batchResults.forEach(r => {
-      if (r.status === 'fulfilled' && r.value?.length) {
-        results.push(...r.value);
-      }
-    });
-  }
-
-  // Remover duplicatas
+  // Remover duplicatas pelo hash
   const seen = new Set();
-  const unicos = results.filter(item => {
-    const key = `${item.nome}|${item.tamanho}|${item.magnet?.substring(0, 50)}`;
-    if (seen.has(key)) return false;
-    seen.add(key);
+  const unicos = torrents.filter(item => {
+    const hashMatch = item.magnet.match(/btih:([a-zA-Z0-9]+)/i);
+    const hash = hashMatch ? hashMatch[1].toLowerCase() : '';
+    if (!hash || seen.has(hash)) return false;
+    seen.add(hash);
     return true;
   });
 
   // Ordenar por seeds
   const resposta = unicos.sort((a, b) => b.seeds - a.seeds);
 
-  log.success(`Total: ${resposta.length} torrents únicos encontrados`);
+  log.success(`Total: ${resposta.length} torrents únicos`);
 
   // Salvar no cache
   if (redisAvailable) {
@@ -586,23 +346,16 @@ app.get('/', (req, res) => {
 
 // ===================== START =====================
 async function start() {
-  log.info('Iniciando Addon Torrents BR...');
+  log.info('Iniciando Addon Torrents BR com Jackett...');
 
   // Inicializar Redis
   await initRedis();
-
-  // Inicializar browser
-  try {
-    await getBrowser();
-  } catch (err) {
-    log.error('Falha crítica ao iniciar browser:', err.message);
-    log.warn('Addon iniciará sem capacidade de scraping');
-  }
 
   app.listen(PORT, () => {
     log.success(`Addon rodando em http://localhost:${PORT}`);
     log.info(`Manifest: http://localhost:${PORT}/manifest.json`);
     log.info(`Health: http://localhost:${PORT}/health`);
+    log.info(`Jackett: ${process.env.JACKETT_URL || 'não configurado'}`);
   });
 }
 
@@ -615,12 +368,7 @@ start().catch(err => {
 const gracefulShutdown = async (signal) => {
   log.info(`${signal} recebido, encerrando...`);
 
-  if (browser?.isConnected()) {
-    await browser.close().catch(() => {});
-    log.info('Browser fechado');
-  }
-
-  if (redisAvailable) {
+  if (redisAvailable && redisClient) {
     await redisClient.quit().catch(() => {});
     log.info('Redis desconectado');
   }
@@ -630,20 +378,3 @@ const gracefulShutdown = async (signal) => {
 
 process.on('SIGINT', () => gracefulShutdown('SIGINT'));
 process.on('SIGTERM', () => gracefulShutdown('SIGTERM'));
-
-// Prevenir memory leaks do Puppeteer
-setInterval(async () => {
-  try {
-    if (browser?.isConnected()) {
-      const pages = await browser.pages();
-      if (pages.length > 5) {
-        log.warn(`Fechando ${pages.length - 1} páginas órfãs`);
-        for (let i = 1; i < pages.length; i++) {
-          await pages[i].close().catch(() => {});
-        }
-      }
-    }
-  } catch (err) {
-    log.debug('Erro na limpeza de páginas:', err.message);
-  }
-}, 300000); // A cada 5 minutos
