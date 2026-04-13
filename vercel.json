@@ -1,0 +1,49 @@
+{
+  "version": 2,
+  "builds": [
+    {
+      "src": "api/*.js",
+      "use": "@vercel/node"
+    }
+  ],
+  "routes": [
+    {
+      "src": "/manifest.json",
+      "dest": "/api/manifest.js"
+    },
+    {
+      "src": "/stream/movie/([^/]+)/([^/]+)\\.json",
+      "dest": "/api/stream.js?type=movie&id=$2",
+      "headers": {
+        "cache-control": "public, max-age=3600"
+      }
+    },
+    {
+      "src": "/stream/series/([^/]+)/([^/]+)/([^/]+)/([^/]+)\\.json",
+      "dest": "/api/stream.js?type=series&id=$4&season=$3&episode=$2",
+      "headers": {
+        "cache-control": "public, max-age=3600"
+      }
+    },
+    {
+      "src": "/search",
+      "dest": "/api/search.js"
+    },
+    {
+      "src": "/health",
+      "dest": "/api/health.js"
+    },
+    {
+      "src": "/(.*)",
+      "dest": "/api/index.js"
+    }
+  ],
+  "env": {
+    "NODE_ENV": "production"
+  },
+  "functions": {
+    "api/*.js": {
+      "maxDuration": 60
+    }
+  }
+}
