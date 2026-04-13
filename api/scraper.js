@@ -29,10 +29,73 @@ const CACHE_TTL = 3600;
 
 // ===================== SITES =====================
 const SITES_BUSCA = [
-  { nome: 'BTDigg', descricao: 'Motor de busca de torrents com magnets completos' },
-  { nome: 'Snowfl', descricao: 'Agregador de torrents público' },
+  { nome: 'Jackett API', descricao: 'API unificada de múltiplos trackers de torrent' },
+  { nome: 'BTDigg', descricao: 'Motor de busca DHT com magnets completos' },
   { nome: 'Nyaa', descricao: 'API para anime e conteúdo asiático' }
 ];
+
+// ===================== JACKETT API =====================
+async function fetchJackett(query) {
+  try {
+    const jackettUrl = process.env.JACKETT_URL;
+    const jackettApiKey = process.env.JACKETT_API_KEY;
+
+    if (!jackettUrl || !jackettApiKey) {
+      log.info('Jackett não configurado (JACKETT_URL e JACKETT_API_KEY necessárias)');
+      return [];
+    }
+
+    log.info(`Buscando Jackett: ${query}`);
+
+    // Jackett API endpoint
+    const apiUrl = `${jackettUrl}/api/v2.0/indexers/all/results`;
+    
+    const { data } = await axios.get(apiUrl, {
+      params: {
+        apikey: jackettApiKey,
+        Query: query,
+        Category: 2000, // Movies
+        limit: 50
+      },
+      timeout: 15000,
+      headers: { 'User-Agent': 'brtorrent/1.0' }
+    });
+
+    if (!data?.Results?.length) {
+      log.info('Jackett retornou 0 resultados');
+      return [];
+    }
+
+    log.info(`Jackett retornou ${data.Results.length} resultados`);
+
+    return data.Results.slice(0, 30).map(item => {
+      // Magnet ou link de download
+      const magnet = item.MagnetUri || item.Link || item.DownloadUrl || '';
+      const name = item.Title || 'Torrent';
+      const size = item.Size ? formatBytes(item.Size) : 'N/A';
+      const seeds = item.Seeders || 0;
+
+      return {
+        provedor: 'Jackett',
+        nome: name,
+        magnet: magnet,
+        tamanho: size,
+        seeds: seeds
+      };
+    });
+  } catch (err) {
+    log.warn(`Jackett falhou: ${err.message}`);
+    return [];
+  }
+}
+
+function formatBytes(bytes) {
+  if (!bytes || bytes === 0) return '0 B';
+  const k = 1024;
+  const sizes = ['B', 'KB', 'MB', 'GB', 'TB'];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return parseFloat((bytes / Math.pow(k, i)).toFixed(2)) + ' ' + sizes[i];
+}
 
 // ===================== BTDIGG (SCRAPING LEVE) =====================
 async function fetchBTDigg(query) {
@@ -94,57 +157,6 @@ async function fetchBTDigg(query) {
     return results;
   } catch (err) {
     log.warn(`BTDigg falhou: ${err.message}`);
-    return [];
-  }
-}
-
-// ===================== SNOWFL (API ALTERNATIVA) =====================
-async function fetchSnowfl(query) {
-  try {
-    log.info(`Buscando Snowfl: ${query}`);
-    
-    const { data: html } = await axios.get(`https://snowfl.com/?query=${encodeURIComponent(query)}`, {
-      timeout: 10000,
-      headers: {
-        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
-        'Accept': 'text/html,application/xhtml+xml'
-      },
-      maxRedirects: 5
-    });
-
-    const results = [];
-    
-    // Extrair magnet links
-    const magnetRegex = /magnet:\?xt=urn:btih:([a-fA-F0-9]{32,40})[^&"]*/g;
-    let magnetMatch;
-    const magnets = [];
-    while ((magnetMatch = magnetRegex.exec(html)) !== null) {
-      magnets.push(magnetMatch[0]);
-    }
-
-    // Extrair títulos
-    const titleRegex = /class="title">[^<]*<a[^>]*>([^<]+)<\/a>/gi;
-    const titles = [];
-    let titleMatch;
-    while ((titleMatch = titleRegex.exec(html)) !== null) {
-      titles.push(titleMatch[1].trim());
-    }
-
-    // Combinar
-    for (let i = 0; i < Math.min(magnets.length, titles.length, 15); i++) {
-      results.push({
-        provedor: 'Snowfl',
-        nome: titles[i],
-        magnet: magnets[i],
-        tamanho: 'N/A',
-        seeds: 0
-      });
-    }
-
-    log.info(`Snowfl: ${results.length} resultados`);
-    return results;
-  } catch (err) {
-    log.warn(`Snowfl falhou: ${err.message}`);
     return [];
   }
 }
@@ -211,11 +223,11 @@ async function getTorrents(query) {
 
   log.info(`Buscando torrents: ${query}`);
 
-  // Buscar em todas as fontes
+  // Buscar em todas as fontes (Jackett primeiro se configurado)
   const promises = [
-    fetchBTDigg(query),
-    fetchSnowfl(query),
-    fetchNyaa(query)
+    fetchJackett(query),  // Fonte principal se configurada
+    fetchBTDigg(query),   // Backup DHT
+    fetchNyaa(query)      // Anime
   ];
 
   const results = await Promise.allSettled(promises);
