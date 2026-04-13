@@ -56,11 +56,16 @@ async function fetchBitSearch(query) {
     return data.results.slice(0, 20).map(item => {
       // Construir magnet link a partir do info_hash
       const infoHash = item.info_hash || item.hash || '';
-      const magnet = infoHash ? `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(item.name || '')}&tr=udp://tracker.opentrackr.org:1337/announce` : '';
+      const name = item.name || item.title || 'Torrent';
+      
+      // Construir magnet com múltiplos trackers para melhor conectividade
+      const magnet = infoHash 
+        ? `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.tracker.cl:1337/announce&tr=udp://tracker.openbittorrent.com:6969/announce`
+        : '';
       
       return {
         provedor: 'BitSearch',
-        nome: item.name || item.title || 'Torrent',
+        nome: name,
         magnet: magnet,
         tamanho: item.size || 'N/A',
         seeds: parseInt(item.seeders || item.peers || '0') || 0
@@ -207,14 +212,23 @@ async function getTorrents(query) {
     return [];
   }
 
-  // Remover duplicatas
+  // Remover duplicatas - usar info_hash como chave
   const seen = new Set();
-  const unicos = todos.filter(item => {
-    const key = item.magnet?.substring(0, 50);
-    if (!key || seen.has(key)) return false;
-    seen.add(key);
-    return true;
-  });
+  const unicos = [];
+  
+  for (const item of todos) {
+    // Extrair hash do magnet
+    const hashMatch = item.magnet.match(/btih:([a-zA-Z0-9]+)/i);
+    const hash = hashMatch ? hashMatch[1].toLowerCase() : '';
+    
+    if (hash && !seen.has(hash)) {
+      seen.add(hash);
+      unicos.push(item);
+    } else if (!hash) {
+      // Se não tem hash, adicionar mesmo assim
+      unicos.push(item);
+    }
+  }
 
   // Ordenar por seeds
   const resposta = unicos.sort((a, b) => b.seeds - a.seeds);
