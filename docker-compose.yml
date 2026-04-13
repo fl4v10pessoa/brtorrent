@@ -16,13 +16,11 @@ services:
     ports:
       - "3000:3000"
     environment:
-      - JACKETT_URL=http://jackett-host:9117
+      - JACKETT_URL=http://10.0.0.1:9117
       - JACKETT_API_KEY=xk0n30nw3vsydqj40klwwqw1jjw227om
       - REDIS_URL=redis://redis:6379
       - PORT=3000
       - NODE_ENV=production
-    extra_hosts:
-      - "jackett-host:host-gateway"
     depends_on:
       - redis
     networks:
