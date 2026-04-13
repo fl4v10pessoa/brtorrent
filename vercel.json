@@ -4,5 +4,27 @@
     "api/*.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    {
+      "source": "/manifest.json",
+      "destination": "/api/manifest.js"
+    },
+    {
+      "source": "/stream/movie/:id([^/]+).json",
+      "destination": "/api/stream.js?type=movie&id=:id"
+    },
+    {
+      "source": "/stream/series/:id([^/]+)/:season([^/]+)/:episode([^/]+).json",
+      "destination": "/api/stream.js?type=series&id=:id&season=:season&episode=:episode"
+    },
+    {
+      "source": "/search",
+      "destination": "/api/search.js"
+    },
+    {
+      "source": "/health",
+      "destination": "/api/health.js"
+    }
+  ]
 }

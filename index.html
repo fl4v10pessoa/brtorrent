@@ -1,0 +1,199 @@
+<!DOCTYPE html>
+<html lang="pt-BR">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Torrents BR - Addon Stremio</title>
+  <meta name="description" content="Addon Stremio estilo Torrentio para sites brasileiros de torrents">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: linear-gradient(135deg, #0f0c29 0%, #302b63 50%, #24243e 100%);
+      color: #fff;
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 20px;
+    }
+    .container { max-width: 800px; width: 100%; text-align: center; }
+    .logo {
+      width: 120px; height: 120px; margin: 0 auto 30px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      border-radius: 24px; display: flex; align-items: center; justify-content: center;
+      font-size: 48px; font-weight: 800;
+      box-shadow: 0 10px 40px rgba(102, 126, 234, 0.3);
+    }
+    h1 {
+      font-size: 3rem; font-weight: 800; margin-bottom: 10px;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      -webkit-background-clip: text; -webkit-text-fill-color: transparent; background-clip: text;
+    }
+    .subtitle { font-size: 1.2rem; color: rgba(255, 255, 255, 0.7); margin-bottom: 40px; }
+    .sites-section {
+      background: rgba(255, 255, 255, 0.05); backdrop-filter: blur(10px);
+      border-radius: 16px; padding: 30px; margin-bottom: 40px;
+      border: 1px solid rgba(255, 255, 255, 0.1);
+    }
+    .sites-section h2 { font-size: 1.5rem; margin-bottom: 20px; color: #667eea; }
+    .sites-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 15px; text-align: left; }
+    .site-card {
+      background: rgba(255, 255, 255, 0.05); padding: 15px; border-radius: 12px;
+      border: 1px solid rgba(255, 255, 255, 0.1); transition: transform 0.2s, border-color 0.2s;
+    }
+    .site-card:hover { transform: translateY(-2px); border-color: #667eea; }
+    .site-card h3 { font-size: 1rem; margin-bottom: 5px; color: #fff; }
+    .site-card p { font-size: 0.85rem; color: rgba(255, 255, 255, 0.6); line-height: 1.4; }
+    .site-url { font-size: 0.75rem; color: #667eea; margin-top: 8px; display: block; }
+    .buttons { display: flex; gap: 15px; justify-content: center; flex-wrap: wrap; }
+    .btn {
+      padding: 16px 32px; border-radius: 12px; font-size: 1rem; font-weight: 600;
+      cursor: pointer; border: none; transition: all 0.3s; text-decoration: none;
+      display: inline-flex; align-items: center; gap: 10px;
+    }
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: #fff; box-shadow: 0 4px 20px rgba(102, 126, 234, 0.3);
+    }
+    .btn-primary:hover { transform: translateY(-2px); box-shadow: 0 6px 30px rgba(102, 126, 234, 0.4); }
+    .btn-secondary {
+      background: rgba(255, 255, 255, 0.1); color: #fff;
+      border: 1px solid rgba(255, 255, 255, 0.2);
+    }
+    .btn-secondary:hover { background: rgba(255, 255, 255, 0.15); border-color: #667eea; }
+    .btn-secondary.copied { background: rgba(72, 187, 120, 0.2); border-color: #48bb78; }
+    .features { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 20px; margin-top: 40px; }
+    .feature { padding: 20px; background: rgba(255, 255, 255, 0.05); border-radius: 12px; }
+    .feature-icon { font-size: 2rem; margin-bottom: 10px; }
+    .feature h3 { font-size: 0.9rem; margin-bottom: 5px; }
+    .feature p { font-size: 0.8rem; color: rgba(255, 255, 255, 0.6); }
+    footer {
+      margin-top: 50px; padding-top: 20px; border-top: 1px solid rgba(255, 255, 255, 0.1);
+      font-size: 0.85rem; color: rgba(255, 255, 255, 0.5);
+    }
+    @media (max-width: 600px) {
+      h1 { font-size: 2rem; }
+      .sites-grid { grid-template-columns: 1fr; }
+      .buttons { flex-direction: column; }
+      .btn { width: 100%; justify-content: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo">🇧🇷</div>
+    <h1>Torrents BR</h1>
+    <p class="subtitle">Addon Stremio estilo Torrentio para sites brasileiros</p>
+
+    <div class="sites-section">
+      <h2>🔍 Sites de Busca</h2>
+      <p style="color: rgba(255,255,255,0.6); margin-bottom: 20px;">
+        Este addon busca torrents automaticamente nos seguintes sites brasileiros:
+      </p>
+      <div class="sites-grid">
+        <div class="site-card">
+          <h3>Comando.la</h3>
+          <p>Um dos maiores sites de torrents brasileiros com vasta coleção de filmes e séries</p>
+          <span class="site-url">comando.la</span>
+        </div>
+        <div class="site-card">
+          <h3>BluDV1</h3>
+          <p>Especializado em conteúdo em alta qualidade (BluRay, WEB-DL, etc)</p>
+          <span class="site-url">bludv1.com</span>
+        </div>
+        <div class="site-card">
+          <h3>HDRTorrent</h3>
+          <p>Focado em conteúdo HDR e alta qualidade</p>
+          <span class="site-url">hdrtorrent.com</span>
+        </div>
+        <div class="site-card">
+          <h3>RedeTorrent</h3>
+          <p>Grande acervo de filmes e séries nacionalizadas</p>
+          <span class="site-url">redetorrent.com</span>
+        </div>
+        <div class="site-card">
+          <h3>Torrents dos Filmes</h3>
+          <p>Especializado em filmes dublados e legendados em português</p>
+          <span class="site-url">torrentsdosfilmes1.com</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="buttons">
+      <a href="#" class="btn btn-primary" id="installBtn">
+        🚀 INSTALAR NO STREMIO
+      </a>
+      <button class="btn btn-secondary" id="copyBtn" onclick="copyManifest()">
+        📋 COPIAR MANIFEST
+      </button>
+    </div>
+
+    <div class="features">
+      <div class="feature">
+        <div class="feature-icon">⚡</div>
+        <h3>Cache Otimizado</h3>
+        <p>Buscas rápidas com Redis</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🎬</div>
+        <h3>HD/4K</h3>
+        <p>Ordenado por qualidade</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">👥</div>
+        <h3>Seeds</h3>
+        <p>Maior seeds primeiro</p>
+      </div>
+      <div class="feature">
+        <div class="feature-icon">🇧🇷</div>
+        <h3>PT-BR</h3>
+        <p>Conteúdo brasileiro</p>
+      </div>
+    </div>
+
+    <footer>
+      <p>© 2026 Torrents BR - Addon Stremio para uso pessoal e educacional</p>
+      <p style="margin-top: 5px;">Versão 2.1.0</p>
+    </footer>
+  </div>
+
+  <script>
+    const manifestUrl = '/manifest.json';
+
+    async function copyManifest() {
+      try {
+        const fullUrl = window.location.origin + manifestUrl;
+        if (navigator.clipboard && navigator.clipboard.writeText) {
+          await navigator.clipboard.writeText(fullUrl);
+        } else {
+          const textArea = document.createElement('textarea');
+          textArea.value = fullUrl;
+          document.body.appendChild(textArea);
+          textArea.select();
+          document.execCommand('copy');
+          document.body.removeChild(textArea);
+        }
+        const btn = document.getElementById('copyBtn');
+        btn.classList.add('copied');
+        btn.innerHTML = '✅ COPIADO!';
+        setTimeout(() => {
+          btn.classList.remove('copied');
+          btn.innerHTML = '📋 COPIAR MANIFEST';
+        }, 2000);
+      } catch (err) {
+        console.error('Erro ao copiar:', err);
+        alert('Erro ao copiar. Copie manualmente: ' + window.location.origin + manifestUrl);
+      }
+    }
+
+    document.getElementById('installBtn').addEventListener('click', function(e) {
+      const fullUrl = window.location.origin + manifestUrl;
+      window.open(fullUrl, '_blank');
+    });
+  </script>
+</body>
+</html>
