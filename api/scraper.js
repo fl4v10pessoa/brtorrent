@@ -29,143 +29,147 @@ const CACHE_TTL = 3600;
 
 // ===================== SITES =====================
 const SITES_BUSCA = [
-  { nome: 'BitSearch', descricao: 'API pública de busca de torrents' },
-  { nome: 'TorrentGalaxy', descricao: 'Torrents diversos' },
+  { nome: 'BTDigg', descricao: 'Motor de busca de torrents com magnets completos' },
+  { nome: 'Snowfl', descricao: 'Agregador de torrents público' },
   { nome: 'Nyaa', descricao: 'API para anime e conteúdo asiático' }
 ];
 
-// ===================== BITSEARCH API (PÚBLICA E GRATUITA) =====================
-async function fetchBitSearch(query) {
+// ===================== BTDIGG (SCRAPING LEVE) =====================
+async function fetchBTDigg(query) {
   try {
-    log.info(`Buscando BitSearch: ${query}`);
+    log.info(`Buscando BTDigg: ${query}`);
     
-    const { data } = await axios.get('https://bitsearch.to/api/v1/search', {
-      params: {
-        q: query,
-        sort: 'seeders',
-        page: 1
-      },
+    const { data: html } = await axios.get(`https://btdig.com/search?q=${encodeURIComponent(query)}&order=0`, {
       timeout: 10000,
-      headers: { 'User-Agent': 'brtorrent/1.0' }
+      headers: {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml'
+      },
+      maxRedirects: 5
     });
 
-    if (!data?.results?.length) {
-      log.info('BitSearch retornou 0 resultados');
-      return [];
+    const results = [];
+    
+    // Extrair magnet links completos
+    const magnetRegex = /magnet:\?xt=urn:btih:([a-fA-F0-9]{40})[^&"]*/g;
+    let magnetMatch;
+    const magnets = [];
+    while ((magnetMatch = magnetRegex.exec(html)) !== null) {
+      magnets.push(magnetMatch[0]);
     }
 
-    log.info(`BitSearch retornou ${data.results.length} resultados`);
+    // Extrair títulos
+    const titleRegex = /<div class="one_result">[\s\S]*?<a[^>]*>(.*?)<\/a>/gi;
+    const titles = [];
+    let titleMatch;
+    while ((titleMatch = titleRegex.exec(html)) !== null) {
+      // Limpar HTML
+      const clean = titleMatch[1].replace(/<[^>]*>/g, '').trim();
+      if (clean) titles.push(clean);
+    }
 
-    return data.results.slice(0, 20).map(item => {
-      // Tentar extrair hash de múltiplos campos
-      const infoHash = item.info_hash || item.hash || item.torrent_hash || item.id || '';
-      const name = item.name || item.title || 'Torrent';
-      const size = item.size || item.filesize || 'N/A';
-      const seeders = parseInt(item.seeders || item.peers || item.leechers || '0') || 0;
-      
-      // Construir magnet link
-      let magnet = '';
-      if (infoHash && infoHash.length >= 32) {
-        magnet = `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.tracker.cl:1337/announce&tr=udp://tracker.openbittorrent.com:6969/announce`;
-      } else {
-        log.warn(`Hash inválido para ${name}: ${infoHash}`);
+    // Extrair tamanhos
+    const sizeRegex = /<span class="td_size">[^<]*<span class="smaller">(.*?)<\/span>/gi;
+    const sizes = [];
+    let sizeMatch;
+    while ((sizeMatch = sizeRegex.exec(html)) !== null) {
+      sizes.push(sizeMatch[1]);
+    }
+
+    // Combinar resultados
+    const maxLen = Math.max(magnets.length, titles.length);
+    for (let i = 0; i < Math.min(maxLen, 20); i++) {
+      if (magnets[i]) {
+        results.push({
+          provedor: 'BTDigg',
+          nome: titles[i] || `Torrent ${i+1}`,
+          magnet: magnets[i],
+          tamanho: sizes[i] || 'N/A',
+          seeds: 0
+        });
       }
-      
-      return {
-        provedor: 'BitSearch',
-        nome: name,
-        magnet: magnet,
-        tamanho: typeof size === 'number' ? formatSize(size) : size,
-        seeds: seeders
-      };
-    });
+    }
+
+    log.info(`BTDigg: ${results.length} resultados`);
+    return results;
   } catch (err) {
-    log.warn(`BitSearch falhou: ${err.message}`);
+    log.warn(`BTDigg falhou: ${err.message}`);
     return [];
   }
 }
 
-function formatSize(bytes) {
-  if (!bytes) return 'N/A';
-  const gb = bytes / (1024 * 1024 * 1024);
-  if (gb >= 1) return `${gb.toFixed(2)} GB`;
-  const mb = bytes / (1024 * 1024);
-  return `${mb.toFixed(2)} MB`;
-}
-
-// ===================== TORRENT GALAXY (API NÃO OFICIAL) =====================
-async function fetchTorrentGalaxy(query) {
+// ===================== SNOWFL (API ALTERNATIVA) =====================
+async function fetchSnowfl(query) {
   try {
-    log.info(`Buscando TorrentGalaxy: ${query}`);
+    log.info(`Buscando Snowfl: ${query}`);
     
-    const { data } = await axios.get('https://torrentgalaxy.to/getresults', {
-      params: {
-        search: query
-      },
+    const { data: html } = await axios.get(`https://snowfl.com/?query=${encodeURIComponent(query)}`, {
       timeout: 10000,
       headers: {
-        'User-Agent': 'Mozilla/5.0',
-        'Referer': 'https://torrentgalaxy.to/'
-      }
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36',
+        'Accept': 'text/html,application/xhtml+xml'
+      },
+      maxRedirects: 5
     });
 
-    // HTML parsing
-    const html = typeof data === 'string' ? data : JSON.stringify(data);
     const results = [];
-
-    // Extrair info_hash e titles
-    const magnetRegex = /magnet:\?xt=urn:btih:([a-f0-9]{40})/gi;
-    let match;
-    const hashes = [];
-    while ((match = magnetRegex.exec(html)) !== null) {
-      hashes.push(match[1]);
+    
+    // Extrair magnet links
+    const magnetRegex = /magnet:\?xt=urn:btih:([a-fA-F0-9]{32,40})[^&"]*/g;
+    let magnetMatch;
+    const magnets = [];
+    while ((magnetMatch = magnetRegex.exec(html)) !== null) {
+      magnets.push(magnetMatch[0]);
     }
 
-    const titleRegex = /title="([^"]*(?:4K|2160p|1080p|720p|dublado|legendado)[^"]*)"/gi;
+    // Extrair títulos
+    const titleRegex = /class="title">[^<]*<a[^>]*>([^<]+)<\/a>/gi;
     const titles = [];
-    while ((match = titleRegex.exec(html)) !== null) {
-      titles.push(match[1]);
+    let titleMatch;
+    while ((titleMatch = titleRegex.exec(html)) !== null) {
+      titles.push(titleMatch[1].trim());
     }
 
-    for (let i = 0; i < Math.min(hashes.length, titles.length, 15); i++) {
+    // Combinar
+    for (let i = 0; i < Math.min(magnets.length, titles.length, 15); i++) {
       results.push({
-        provedor: 'TorrentGalaxy',
+        provedor: 'Snowfl',
         nome: titles[i],
-        magnet: `magnet:?xt=urn:btih:${hashes[i]}&dn=${encodeURIComponent(titles[i])}&tr=udp://tracker.opentrackr.org:1337/announce`,
+        magnet: magnets[i],
         tamanho: 'N/A',
         seeds: 0
       });
     }
 
+    log.info(`Snowfl: ${results.length} resultados`);
     return results;
   } catch (err) {
-    log.warn(`TorrentGalaxy falhou: ${err.message}`);
+    log.warn(`Snowfl falhou: ${err.message}`);
     return [];
   }
 }
 
-// ===================== NYAA API (ANIME) =====================
+// ===================== NYAA (ANIME) =====================
 async function fetchNyaa(query) {
   try {
     log.info(`Buscando Nyaa: ${query}`);
     
-    const { data } = await axios.get('https://nyaa.si/?page=rss', {
+    const { data: xml } = await axios.get('https://nyaa.si/?page=rss', {
       params: { q: query },
       timeout: 8000,
       headers: { 'User-Agent': 'brtorrent/1.0' }
     });
 
-    const xml = typeof data === 'string' ? data : '';
     const results = [];
+    const xmlStr = typeof xml === 'string' ? xml : JSON.stringify(xml);
 
-    // Parse XML RSS
+    // Parse items
     const itemRegex = /<item>[\s\S]*?<\/item>/gi;
-    const items = xml.match(itemRegex) || [];
+    const items = xmlStr.match(itemRegex) || [];
 
     for (const item of items.slice(0, 15)) {
       const titleMatch = /<title><!\[CDATA\[(.*?)\]\]><\/title>/i.exec(item);
       const magnetMatch = item.match(/magnet:\?xt=urn:btih:[a-zA-Z0-9]+[^&"\s]*/i);
-      const sizeMatch = /nyaa:infoHash\s*>\s*([a-f0-9]+)/i.exec(item);
       const title = titleMatch?.[1] || '';
 
       if (title && magnetMatch) {
@@ -179,6 +183,7 @@ async function fetchNyaa(query) {
       }
     }
 
+    log.info(`Nyaa: ${results.length} resultados`);
     return results;
   } catch (err) {
     log.warn(`Nyaa falhou: ${err.message}`);
@@ -208,8 +213,8 @@ async function getTorrents(query) {
 
   // Buscar em todas as fontes
   const promises = [
-    fetchBitSearch(query),
-    fetchTorrentGalaxy(query),
+    fetchBTDigg(query),
+    fetchSnowfl(query),
     fetchNyaa(query)
   ];
 
@@ -228,20 +233,18 @@ async function getTorrents(query) {
     return [];
   }
 
-  // Remover duplicatas - usar info_hash como chave
+  // Remover duplicatas pelo hash
   const seen = new Set();
   const unicos = [];
   
   for (const item of todos) {
-    // Extrair hash do magnet
     const hashMatch = item.magnet.match(/btih:([a-zA-Z0-9]+)/i);
     const hash = hashMatch ? hashMatch[1].toLowerCase() : '';
     
-    if (hash && !seen.has(hash)) {
+    if (hash && hash.length >= 32 && !seen.has(hash)) {
       seen.add(hash);
       unicos.push(item);
     }
-    // Não adicionar torrents sem hash/magnet
   }
 
   // Ordenar por seeds
@@ -311,7 +314,7 @@ async function handleStream(type, id, season = null, episode = null) {
 
     const torrents = await getTorrents(query);
 
-    // Ordenar
+    // Ordenar por qualidade
     torrents.sort((a, b) => {
       const qa = prioridadeQualidade[extrairQualidade(a.nome)] || 0;
       const qb = prioridadeQualidade[extrairQualidade(b.nome)] || 0;
