@@ -2,17 +2,27 @@ version: '3.8'
 
 services:
   addon:
-    build: .
+    image: node:20-alpine
     container_name: torrents-br-addon
     restart: unless-stopped
+    working_dir: /app
+    command: >
+      sh -c "
+        apk add --no-cache git &&
+        git clone https://github.com/fl4v10pessoa/brtorrent.git /app &&
+        npm ci --only=production &&
+        node index.js
+      "
     ports:
       - "3000:3000"
     environment:
-      - JACKETT_URL=http://204.216.132.119:9117
+      - JACKETT_URL=http://jackett-host:9117
       - JACKETT_API_KEY=xk0n30nw3vsydqj40klwwqw1jjw227om
       - REDIS_URL=redis://redis:6379
       - PORT=3000
       - NODE_ENV=production
+    extra_hosts:
+      - "jackett-host:host-gateway"
     depends_on:
       - redis
     networks:

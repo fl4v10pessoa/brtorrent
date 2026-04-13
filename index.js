@@ -265,7 +265,7 @@ app.get('/health', (req, res) => {
     uptime: process.uptime(),
     memory: process.memoryUsage(),
     redis: redisAvailable ? 'connected' : 'disconnected',
-    browser: browser?.isConnected() ? 'connected' : 'disconnected',
+    jackett: process.env.JACKETT_URL ? 'configured' : 'not configured',
     timestamp: new Date().toISOString()
   };
   res.json(health);
