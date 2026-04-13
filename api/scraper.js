@@ -50,31 +50,47 @@ async function fetchBitSearch(query) {
     });
 
     if (!data?.results?.length) {
+      log.info('BitSearch retornou 0 resultados');
       return [];
     }
 
+    log.info(`BitSearch retornou ${data.results.length} resultados`);
+
     return data.results.slice(0, 20).map(item => {
-      // Construir magnet link a partir do info_hash
-      const infoHash = item.info_hash || item.hash || '';
+      // Tentar extrair hash de múltiplos campos
+      const infoHash = item.info_hash || item.hash || item.torrent_hash || item.id || '';
       const name = item.name || item.title || 'Torrent';
+      const size = item.size || item.filesize || 'N/A';
+      const seeders = parseInt(item.seeders || item.peers || item.leechers || '0') || 0;
       
-      // Construir magnet com múltiplos trackers para melhor conectividade
-      const magnet = infoHash 
-        ? `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.tracker.cl:1337/announce&tr=udp://tracker.openbittorrent.com:6969/announce`
-        : '';
+      // Construir magnet link
+      let magnet = '';
+      if (infoHash && infoHash.length >= 32) {
+        magnet = `magnet:?xt=urn:btih:${infoHash}&dn=${encodeURIComponent(name)}&tr=udp://tracker.opentrackr.org:1337/announce&tr=udp://open.tracker.cl:1337/announce&tr=udp://tracker.openbittorrent.com:6969/announce`;
+      } else {
+        log.warn(`Hash inválido para ${name}: ${infoHash}`);
+      }
       
       return {
         provedor: 'BitSearch',
         nome: name,
         magnet: magnet,
-        tamanho: item.size || 'N/A',
-        seeds: parseInt(item.seeders || item.peers || '0') || 0
+        tamanho: typeof size === 'number' ? formatSize(size) : size,
+        seeds: seeders
       };
     });
   } catch (err) {
     log.warn(`BitSearch falhou: ${err.message}`);
     return [];
   }
+}
+
+function formatSize(bytes) {
+  if (!bytes) return 'N/A';
+  const gb = bytes / (1024 * 1024 * 1024);
+  if (gb >= 1) return `${gb.toFixed(2)} GB`;
+  const mb = bytes / (1024 * 1024);
+  return `${mb.toFixed(2)} MB`;
 }
 
 // ===================== TORRENT GALAXY (API NÃO OFICIAL) =====================
@@ -224,10 +240,8 @@ async function getTorrents(query) {
     if (hash && !seen.has(hash)) {
       seen.add(hash);
       unicos.push(item);
-    } else if (!hash) {
-      // Se não tem hash, adicionar mesmo assim
-      unicos.push(item);
     }
+    // Não adicionar torrents sem hash/magnet
   }
 
   // Ordenar por seeds
