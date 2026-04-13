@@ -1,40 +1,26 @@
 {
   "version": 2,
-  "routes": [
-    {
-      "src": "/manifest.json",
-      "dest": "/api/manifest.js"
-    },
-    {
-      "src": "/stream/movie/([^/]+)/([^/]+)\\.json",
-      "dest": "/api/stream.js?type=movie&id=$2",
-      "headers": {
-        "cache-control": "public, max-age=3600"
-      }
-    },
-    {
-      "src": "/stream/series/([^/]+)/([^/]+)/([^/]+)/([^/]+)\\.json",
-      "dest": "/api/stream.js?type=series&id=$4&season=$3&episode=$2",
-      "headers": {
-        "cache-control": "public, max-age=3600"
-      }
-    },
-    {
-      "src": "/search",
-      "dest": "/api/search.js"
-    },
-    {
-      "src": "/health",
-      "dest": "/api/health.js"
-    },
-    {
-      "src": "/(.*)",
-      "dest": "/api/index.js"
-    }
-  ],
   "functions": {
     "api/*.js": {
       "maxDuration": 60
     }
-  }
+  },
+  "rewrites": [
+    { "source": "/manifest.json", "destination": "/api/manifest" },
+    { "source": "/stream/movie/:id.json", "destination": "/api/stream?type=movie&id=:id" },
+    { "source": "/stream/series/:id/:season/:episode.json", "destination": "/api/stream?type=series&id=:id&season=:season&episode=:episode" },
+    { "source": "/search", "destination": "/api/search" },
+    { "source": "/health", "destination": "/api/health" },
+    { "source": "/", "destination": "/api/index" }
+  ],
+  "headers": [
+    {
+      "source": "/(.*)",
+      "headers": [
+        { "key": "Access-Control-Allow-Origin", "value": "*" },
+        { "key": "Access-Control-Allow-Methods", "value": "GET, OPTIONS" },
+        { "key": "Access-Control-Allow-Headers", "value": "Content-Type, Accept" }
+      ]
+    }
+  ]
 }

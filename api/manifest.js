@@ -1,4 +1,4 @@
-const manifestHandler = async (req, res) => {
+module.exports = async (req, res) => {
   // Headers CORS essenciais para Stremio
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
@@ -35,5 +35,3 @@ const manifestHandler = async (req, res) => {
 
   return res.status(200).json(manifest);
 };
-
-module.exports = manifestHandler;

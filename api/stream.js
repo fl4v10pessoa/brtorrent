@@ -1,12 +1,13 @@
 const { handleStream } = require('./scraper');
 
-const streamHandler = async (req, res) => {
+module.exports = async (req, res) => {
+  // Headers CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).end();
   }
 
   try {
@@ -26,11 +27,9 @@ const streamHandler = async (req, res) => {
     return res.status(200).json(result);
   } catch (err) {
     console.error('Erro no stream handler:', err.message);
-    return res.status(500).json({ 
-      streams: [], 
-      error: 'Erro interno do servidor' 
+    return res.status(500).json({
+      streams: [],
+      error: 'Erro interno do servidor'
     });
   }
 };
-
-module.exports = streamHandler;

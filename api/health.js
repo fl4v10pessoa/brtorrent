@@ -1,7 +1,12 @@
-const healthHandler = async (req, res) => {
+module.exports = async (req, res) => {
+  // Headers CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
+
+  if (req.method === 'OPTIONS') {
+    return res.status(204).end();
+  }
 
   const health = {
     status: 'ok',
@@ -11,7 +16,5 @@ const healthHandler = async (req, res) => {
     version: '2.1.0'
   };
 
-  res.status(200).json(health);
+  return res.status(200).json(health);
 };
-
-module.exports = healthHandler;

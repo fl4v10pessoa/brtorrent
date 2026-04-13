@@ -1,5 +1,5 @@
-const indexHandler = async (req, res) => {
-  const baseUrl = process.env.VERCEL_URL 
+module.exports = async (req, res) => {
+  const baseUrl = process.env.VERCEL_URL
     ? `https://${process.env.VERCEL_URL}`
     : process.env.BASE_URL || 'http://localhost:3000';
 
@@ -352,5 +352,3 @@ const indexHandler = async (req, res) => {
 
   res.status(200).send(html);
 };
-
-module.exports = indexHandler;

@@ -1,12 +1,13 @@
 const { getTorrents } = require('./scraper');
 
-const searchHandler = async (req, res) => {
+module.exports = async (req, res) => {
+  // Headers CORS
   res.setHeader('Access-Control-Allow-Origin', '*');
   res.setHeader('Access-Control-Allow-Methods', 'GET, OPTIONS');
-  res.setHeader('Access-Control-Allow-Headers', 'Content-Type');
+  res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Accept');
 
   if (req.method === 'OPTIONS') {
-    return res.status(200).end();
+    return res.status(204).end();
   }
 
   try {
@@ -24,11 +25,9 @@ const searchHandler = async (req, res) => {
     });
   } catch (err) {
     console.error('Erro na busca:', err.message);
-    return res.status(500).json({ 
-      error: 'Erro na busca', 
-      detalhes: err.message 
+    return res.status(500).json({
+      error: 'Erro na busca',
+      detalhes: err.message
     });
   }
 };
-
-module.exports = searchHandler;
