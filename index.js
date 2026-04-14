@@ -185,7 +185,7 @@ async function getCinemeta(type, id) {
 // ===================== STREAM HANDLER =====================
 async function handleStream(type, id, season = null, episode = null) {
   try {
-    log.info(`HandleStream: ${type}/${id}${season && episode ? ` S${season}E${episode}` : ''}`);
+    log.info(`HandleStream: ${type}/${id}${season ? ` S${season}E${episode}` : ''}`);
 
     const meta = await getCinemeta(type, id);
     if (!meta) {
@@ -208,10 +208,11 @@ async function handleStream(type, id, season = null, episode = null) {
       query += ` S${s}E${e}`;
     }
 
-    // Adicionar "dublado" ou "legendado" para busca em sites BR
-    query += ' dublado';
+    log.info(`Query para Jackett: ${query}`);
 
     const torrents = await getTorrents(query);
+
+    log.info(`Torrents retornados: ${torrents.length}`);
 
     // Ordenar por qualidade e seeds
     torrents.sort((a, b) => {
@@ -250,7 +251,7 @@ async function handleStream(type, id, season = null, episode = null) {
     return { streams };
   } catch (err) {
     log.error(`Erro no handleStream:`, err.message);
-    return { streams: [] };
+    return { streams: [], error: err.message };
   }
 }
 
